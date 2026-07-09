@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Oil-Powered Schools in England</title>
+<title>Oil-Powered Settings in England</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   * { box-sizing: border-box; }
@@ -32,19 +32,19 @@
     flex: 1; min-width: 340px; overflow-y: auto;
     border-left: 1px solid #dde3ea; background: #fff;
   }
-  #schoolTable { border-collapse: collapse; width: 100%; font-size: 12px; table-layout: fixed; }
-  #schoolTable td { overflow-wrap: break-word; }
-  #schoolTable th {
+  #settingTable { border-collapse: collapse; width: 100%; font-size: 12px; table-layout: fixed; }
+  #settingTable td { overflow-wrap: break-word; }
+  #settingTable th {
     position: sticky; top: 0; background: #f4f6f9; color: #333;
     text-align: left; padding: 7px 6px; border-bottom: 2px solid #c4ccd6;
     cursor: pointer; user-select: none; white-space: nowrap;
   }
-  #schoolTable th:hover { background: #e8edf3; }
-  #schoolTable th .arrow { color: #1a2a44; font-size: 10px; }
-  #schoolTable td { padding: 5px 6px; border-bottom: 1px solid #eef1f5; vertical-align: top; }
-  #schoolTable td.num, #schoolTable th.num { text-align: right; white-space: nowrap; padding-left: 2px; padding-right: 5px; }
-  #schoolTable tbody tr { cursor: pointer; }
-  #schoolTable tbody tr:hover { background: #eef5ff; }
+  #settingTable th:hover { background: #e8edf3; }
+  #settingTable th .arrow { color: #1a2a44; font-size: 10px; }
+  #settingTable td { padding: 5px 6px; border-bottom: 1px solid #eef1f5; vertical-align: top; }
+  #settingTable td.num, #settingTable th.num { text-align: right; white-space: nowrap; padding-left: 2px; padding-right: 5px; }
+  #settingTable tbody tr { cursor: pointer; }
+  #settingTable tbody tr:hover { background: #eef5ff; }
   .popup { font-size: 12.5px; line-height: 1.45; max-height: 340px; overflow-y: auto; }
   .popup h3 { margin: 0 0 2px; font-size: 14px; }
   .popup .sub { color: #666; margin-bottom: 6px; }
@@ -62,7 +62,7 @@
 <body>
 <div id="app">
   <header>
-    <h1>Oil-Powered Schools in England</h1>
+    <h1>Oil-Powered Settings in England</h1>
     <span class="counts" id="counts"></span>
   </header>
   <div id="controls">
@@ -90,7 +90,7 @@
   <div id="main">
     <div id="map"></div>
     <div id="tablePanel">
-      <table id="schoolTable">
+      <table id="settingTable">
         <thead><tr id="tableHead"></tr></thead>
         <tbody id="tableBody"></tbody>
       </table>
@@ -131,7 +131,7 @@ L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
 
 const layer = L.layerGroup().addTo(map);
 let markers = {};   // urn -> circleMarker for the current filter
-let filtered = [];  // schools passing the current filter
+let filtered = [];  // settings passing the current filter
 
 function esc(v) {
   return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -155,7 +155,7 @@ function popupHtml(s) {
       : `<span class="badge off">${name}</span>`;
   }).join("");
   const sisters = s.sisters > 0 ? `<div style="margin-top:3px">Sister partners engaged: <b>${s.sisters}</b></div>` : "";
-  const pred = s.origUrn ? `<tr><td>Note</td><td>Successor to closed school URN ${esc(s.origUrn)}</td></tr>` : "";
+  const pred = s.origUrn ? `<tr><td>Note</td><td>Successor to closed setting URN ${esc(s.origUrn)}</td></tr>` : "";
   return `<div class="popup">
     <h3>${esc(s.name)}</h3>
     <div class="sub">URN ${esc(s.urn)} &middot; ${esc(s.status)}</div>
@@ -189,7 +189,7 @@ function render() {
   filtered = [];
   let eng = 0;
   const bounds = [];
-  for (const s of SCHOOLS) {
+  for (const s of SETTINGS) {
     if (!s.lat) continue;
     if (region && s.region !== region) continue;
     if (phase && s.phase !== phase) continue;
@@ -209,14 +209,14 @@ function render() {
     }).bindPopup(popupHtml(s), { maxWidth: 340 }).addTo(layer);
   }
   document.getElementById("counts").textContent =
-    `${filtered.length.toLocaleString()} schools shown · ${eng.toLocaleString()} engaged with SSP`;
+    `${filtered.length.toLocaleString()} settings shown · ${eng.toLocaleString()} engaged with SSP`;
   if (region && bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
   renderTable();
 }
 
 // --- sortable table ---
 const COLUMNS = [
-  { key: "name", label: "School", get: s => s.name, w: "31%" },
+  { key: "name", label: "Setting", get: s => s.name, w: "31%" },
   { key: "la", label: "LA", get: s => s.la, w: "20%" },
   { key: "phase", label: "Phase", get: s => s.phase, w: "15%" },
   { key: "pupils", label: "Pupils", get: s => s.pupils ? +s.pupils : null, num: true, w: "12%" },
@@ -275,10 +275,10 @@ function fillSelect(id, values) {
     sel.appendChild(o);
   }
 }
-const dataRegions = new Set(SCHOOLS.map(s => s.region).filter(Boolean));
+const dataRegions = new Set(SETTINGS.map(s => s.region).filter(Boolean));
 fillSelect("regionSel", REGION_ORDER.filter(r => dataRegions.has(r))
   .concat([...dataRegions].filter(r => !REGION_ORDER.includes(r)).sort()));
-fillSelect("phaseSel", [...new Set(SCHOOLS.map(s => s.phase).filter(Boolean))].sort());
+fillSelect("phaseSel", [...new Set(SETTINGS.map(s => s.phase).filter(Boolean))].sort());
 for (const id of ["regionSel", "phaseSel", "heatSel", "sspSel"]) {
   document.getElementById(id).addEventListener("change", render);
 }

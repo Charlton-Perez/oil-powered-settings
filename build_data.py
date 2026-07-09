@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge the oil-powered schools SSP list with GIAS (Get Information About Schools)
+"""Merge the oil-powered settings SSP list with GIAS (Get Information About Schools)
 and emit data.js for the dashboard map."""
 import csv
 import json
@@ -10,7 +10,7 @@ from pyproj import Transformer
 
 XLSX = "/Users/sws05ajc/Library/CloudStorage/OneDrive-UniversityofReading/CA National Project Coordination/National Project Coordination/oil_powered_schools/Oil School x SSP May Data (3).xlsx"
 GIAS = "/Users/sws05ajc/Library/CloudStorage/OneDrive-UniversityofReading/dashboards/heatwave-school-closures/data/raw/edubasealldata20260705.csv"
-OUT = "/Users/sws05ajc/Library/CloudStorage/OneDrive-UniversityofReading/dashboards/oil-schools/data.js"
+OUT = "/Users/sws05ajc/Library/CloudStorage/OneDrive-UniversityofReading/dashboards/oil-powered-settings/data.js"
 
 
 def num(v):
@@ -49,7 +49,7 @@ def main():
             "ss": num(r[14]),
         }
 
-    schools = []
+    settings = []
     tf = Transformer.from_crs("EPSG:27700", "EPSG:4326", always_xy=True)
     matched = set()
     with open(GIAS, encoding="cp1252", newline="") as f:
@@ -65,7 +65,7 @@ def main():
                 lat, lon = round(lat, 5), round(lon, 5)
             head = " ".join(x for x in (row["HeadTitle (name)"], row["HeadFirstName"], row["HeadLastName"]) if x)
             address = ", ".join(x for x in (row["Street"], row["Locality"], row["Town"], row["Postcode"]) if x)
-            schools.append({
+            settings.append({
                 "urn": urn,
                 "origUrn": s["urn"] if s["urn"] != urn else None,
                 "name": row["EstablishmentName"],
@@ -91,14 +91,14 @@ def main():
             })
 
     missing = set(oil) - matched
-    no_coords = sum(1 for s in schools if s["lat"] is None)
-    print(f"oil list: {len(oil)} | matched in GIAS: {len(schools)} | unmatched: {len(missing)} | no coords: {no_coords}")
+    no_coords = sum(1 for s in settings if s["lat"] is None)
+    print(f"oil list: {len(oil)} | matched in GIAS: {len(settings)} | unmatched: {len(missing)} | no coords: {no_coords}")
     if missing:
         print("unmatched URNs:", sorted(missing)[:20], file=sys.stderr)
 
     with open(OUT, "w") as f:
-        f.write("const SCHOOLS = ")
-        json.dump(schools, f, separators=(",", ":"))
+        f.write("const SETTINGS = ")
+        json.dump(settings, f, separators=(",", ":"))
         f.write(";\n")
     print(f"wrote {OUT}")
 

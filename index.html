@@ -26,7 +26,25 @@
   .legend { display: flex; gap: 14px; margin-left: auto; font-size: 12.5px; color: #333; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.35); }
-  #map { flex: 1; }
+  #main { display: flex; flex: 1; min-height: 0; }
+  #map { flex: 2; min-width: 0; }
+  #tablePanel {
+    flex: 1; min-width: 340px; overflow-y: auto;
+    border-left: 1px solid #dde3ea; background: #fff;
+  }
+  #schoolTable { border-collapse: collapse; width: 100%; font-size: 12px; table-layout: fixed; }
+  #schoolTable td { overflow-wrap: break-word; }
+  #schoolTable th {
+    position: sticky; top: 0; background: #f4f6f9; color: #333;
+    text-align: left; padding: 7px 6px; border-bottom: 2px solid #c4ccd6;
+    cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  #schoolTable th:hover { background: #e8edf3; }
+  #schoolTable th .arrow { color: #1a2a44; font-size: 10px; }
+  #schoolTable td { padding: 5px 6px; border-bottom: 1px solid #eef1f5; vertical-align: top; }
+  #schoolTable td.num, #schoolTable th.num { text-align: right; white-space: nowrap; padding-left: 2px; padding-right: 5px; }
+  #schoolTable tbody tr { cursor: pointer; }
+  #schoolTable tbody tr:hover { background: #eef5ff; }
   .popup { font-size: 12.5px; line-height: 1.45; max-height: 340px; overflow-y: auto; }
   .popup h3 { margin: 0 0 2px; font-size: 14px; }
   .popup .sub { color: #666; margin-bottom: 6px; }
@@ -69,7 +87,15 @@
       <span><span class="dot" style="background:#e2703a"></span> Not engaged</span>
     </div>
   </div>
-  <div id="map"></div>
+  <div id="main">
+    <div id="map"></div>
+    <div id="tablePanel">
+      <table id="schoolTable">
+        <thead><tr id="tableHead"></tr></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="data.js"></script>
@@ -82,8 +108,19 @@ const PROGRAMMES = [
   ["ss", "Sustainability Support"],
 ];
 
+// North to south, as they appear on the map
+const REGION_ORDER = [
+  "North East", "North West", "Yorkshire and the Humber",
+  "East Midlands", "West Midlands",
+  "East of England", "London", "South East", "South West",
+];
+
 function engaged(s) {
   return PROGRAMMES.some(([k]) => s[k] > 0);
+}
+
+function sspCount(s) {
+  return PROGRAMMES.reduce((n, [k]) => n + (s[k] > 0 ? 1 : 0), 0);
 }
 
 const map = L.map("map", { preferCanvas: true }).setView([52.8, -1.5], 6);
@@ -93,6 +130,8 @@ L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
 }).addTo(map);
 
 const layer = L.layerGroup().addTo(map);
+let markers = {};   // urn -> circleMarker for the current filter
+let filtered = [];  // schools passing the current filter
 
 function esc(v) {
   return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -146,7 +185,9 @@ function render() {
   const heat = document.getElementById("heatSel").value;
   const ssp = document.getElementById("sspSel").value;
   layer.clearLayers();
-  let shown = 0, eng = 0;
+  markers = {};
+  filtered = [];
+  let eng = 0;
   const bounds = [];
   for (const s of SCHOOLS) {
     if (!s.lat) continue;
@@ -156,10 +197,10 @@ function render() {
     const isEng = engaged(s);
     if (ssp === "engaged" && !isEng) continue;
     if (ssp === "not" && isEng) continue;
-    shown++;
+    filtered.push(s);
     if (isEng) eng++;
     bounds.push([s.lat, s.lon]);
-    L.circleMarker([s.lat, s.lon], {
+    markers[s.urn] = L.circleMarker([s.lat, s.lon], {
       radius: 5,
       color: "rgba(0,0,0,.4)",
       weight: 0.7,
@@ -168,9 +209,63 @@ function render() {
     }).bindPopup(popupHtml(s), { maxWidth: 340 }).addTo(layer);
   }
   document.getElementById("counts").textContent =
-    `${shown.toLocaleString()} schools shown · ${eng.toLocaleString()} engaged with SSP`;
+    `${filtered.length.toLocaleString()} schools shown · ${eng.toLocaleString()} engaged with SSP`;
   if (region && bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
+  renderTable();
 }
+
+// --- sortable table ---
+const COLUMNS = [
+  { key: "name", label: "School", get: s => s.name, w: "31%" },
+  { key: "la", label: "LA", get: s => s.la, w: "20%" },
+  { key: "phase", label: "Phase", get: s => s.phase, w: "15%" },
+  { key: "pupils", label: "Pupils", get: s => s.pupils ? +s.pupils : null, num: true, w: "12%" },
+  { key: "fsm", label: "FSM%", get: s => s.fsm ? +s.fsm : null, num: true, w: "13%" },
+  { key: "sspN", label: "SSP", get: s => sspCount(s), num: true, w: "9%" },
+];
+let sortKey = "name", sortDir = 1;
+
+function renderTable() {
+  const col = COLUMNS.find(c => c.key === sortKey);
+  const sorted = [...filtered].sort((a, b) => {
+    const va = col.get(a), vb = col.get(b);
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;   // nulls last regardless of direction
+    if (vb == null) return -1;
+    const cmp = col.num ? va - vb : String(va).localeCompare(String(vb));
+    return cmp * sortDir;
+  });
+  document.getElementById("tableHead").innerHTML = COLUMNS.map(c => {
+    const arrow = c.key === sortKey ? `<span class="arrow"> ${sortDir === 1 ? "▲" : "▼"}</span>` : "";
+    return `<th class="${c.num ? "num" : ""}" data-key="${c.key}" style="width:${c.w}">${c.label}${arrow}</th>`;
+  }).join("");
+  document.getElementById("tableBody").innerHTML = sorted.map(s => {
+    const cells = COLUMNS.map(c => {
+      const v = c.get(s);
+      return `<td class="${c.num ? "num" : ""}">${v == null ? "–" : esc(v)}</td>`;
+    }).join("");
+    return `<tr data-urn="${esc(s.urn)}">${cells}</tr>`;
+  }).join("");
+}
+
+document.getElementById("tableHead").addEventListener("click", e => {
+  const th = e.target.closest("th");
+  if (!th) return;
+  const key = th.dataset.key;
+  if (key === sortKey) sortDir = -sortDir;
+  else { sortKey = key; sortDir = 1; }
+  renderTable();
+});
+
+document.getElementById("tableBody").addEventListener("click", e => {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  const m = markers[tr.dataset.urn];
+  if (m) {
+    map.setView(m.getLatLng(), Math.max(map.getZoom(), 12));
+    m.openPopup();
+  }
+});
 
 function fillSelect(id, values) {
   const sel = document.getElementById(id);
@@ -180,7 +275,9 @@ function fillSelect(id, values) {
     sel.appendChild(o);
   }
 }
-fillSelect("regionSel", [...new Set(SCHOOLS.map(s => s.region).filter(Boolean))].sort());
+const dataRegions = new Set(SCHOOLS.map(s => s.region).filter(Boolean));
+fillSelect("regionSel", REGION_ORDER.filter(r => dataRegions.has(r))
+  .concat([...dataRegions].filter(r => !REGION_ORDER.includes(r)).sort()));
 fillSelect("phaseSel", [...new Set(SCHOOLS.map(s => s.phase).filter(Boolean))].sort());
 for (const id of ["regionSel", "phaseSel", "heatSel", "sspSel"]) {
   document.getElementById(id).addEventListener("change", render);

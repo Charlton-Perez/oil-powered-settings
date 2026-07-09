@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oil-Powered Schools in England</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  header {
+    background: #1a2a44; color: #fff; padding: 10px 18px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header .counts { font-size: 13px; opacity: .85; }
+  #controls {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 8px 18px; background: #f4f6f9; border-bottom: 1px solid #dde3ea;
+  }
+  #controls label { font-size: 13px; color: #333; font-weight: 600; }
+  select {
+    font-size: 13px; padding: 5px 8px; border: 1px solid #c4ccd6; border-radius: 6px; background: #fff;
+  }
+  .legend { display: flex; gap: 14px; margin-left: auto; font-size: 12.5px; color: #333; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.35); }
+  #map { flex: 1; }
+  .popup { font-size: 12.5px; line-height: 1.45; max-height: 340px; overflow-y: auto; }
+  .popup h3 { margin: 0 0 2px; font-size: 14px; }
+  .popup .sub { color: #666; margin-bottom: 6px; }
+  .popup table { border-collapse: collapse; width: 100%; }
+  .popup td { padding: 1.5px 0; vertical-align: top; }
+  .popup td:first-child { color: #667; padding-right: 10px; white-space: nowrap; }
+  .popup .ssp { margin-top: 7px; padding-top: 6px; border-top: 1px solid #e2e6eb; }
+  .popup .ssp b { display: block; margin-bottom: 3px; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 9px; font-size: 11px; font-weight: 600; margin: 1px 3px 1px 0; }
+  .badge.on { background: #d7f0dc; color: #176633; }
+  .badge.off { background: #eef0f3; color: #99a; }
+  .leaflet-popup-content { margin: 12px 14px; min-width: 250px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Oil-Powered Schools in England</h1>
+    <span class="counts" id="counts"></span>
+  </header>
+  <div id="controls">
+    <label for="regionSel">Region:</label>
+    <select id="regionSel"><option value="">All of England</option></select>
+    <label for="phaseSel">Phase:</label>
+    <select id="phaseSel"><option value="">All phases</option></select>
+    <label for="heatSel">Heating:</label>
+    <select id="heatSel">
+      <option value="">All</option>
+      <option value="Oil_no_gas">Oil only (no gas)</option>
+      <option value="Oil_plus_gas">Oil + gas</option>
+    </select>
+    <label for="sspSel">SSP:</label>
+    <select id="sspSel">
+      <option value="">All</option>
+      <option value="engaged">Engaged with SSP</option>
+      <option value="not">Not engaged</option>
+    </select>
+    <div class="legend">
+      <span><span class="dot" style="background:#2e9e4f"></span> Engaged with SSP</span>
+      <span><span class="dot" style="background:#e2703a"></span> Not engaged</span>
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="data.js"></script>
+<script>
+const PROGRAMMES = [
+  ["ca", "Climate Ambassadors"],
+  ["lgz", "Let's Go Zero"],
+  ["np", "Nature Park"],
+  ["nzap", "NZAP / GBESP"],
+  ["ss", "Sustainability Support"],
+];
+
+function engaged(s) {
+  return PROGRAMMES.some(([k]) => s[k] > 0);
+}
+
+const map = L.map("map", { preferCanvas: true }).setView([52.8, -1.5], 6);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  maxZoom: 19,
+}).addTo(map);
+
+const layer = L.layerGroup().addTo(map);
+
+function esc(v) {
+  return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function row(label, value) {
+  return value ? `<tr><td>${label}</td><td>${esc(value)}</td></tr>` : "";
+}
+
+function popupHtml(s) {
+  const heat = s.heat === "Oil_no_gas" ? "Oil only (no gas)" : "Oil + gas";
+  let site = "";
+  if (s.website) {
+    const url = s.website.startsWith("http") ? s.website : "http://" + s.website;
+    site = `<tr><td>Website</td><td><a href="${esc(url)}" target="_blank">${esc(s.website)}</a></td></tr>`;
+  }
+  const badges = PROGRAMMES.map(([k, name]) => {
+    const n = s[k];
+    return n > 0
+      ? `<span class="badge on">${name}: ${n}</span>`
+      : `<span class="badge off">${name}</span>`;
+  }).join("");
+  const sisters = s.sisters > 0 ? `<div style="margin-top:3px">Sister partners engaged: <b>${s.sisters}</b></div>` : "";
+  const pred = s.origUrn ? `<tr><td>Note</td><td>Successor to closed school URN ${esc(s.origUrn)}</td></tr>` : "";
+  return `<div class="popup">
+    <h3>${esc(s.name)}</h3>
+    <div class="sub">URN ${esc(s.urn)} &middot; ${esc(s.status)}</div>
+    <table>
+      ${row("Type", s.type)}
+      ${row("Phase", s.phase)}
+      ${row("Ages", s.ages)}
+      ${row("Local authority", s.la)}
+      ${row("Region", s.region)}
+      ${row("Trust", s.trust)}
+      ${row("Pupils", s.pupils && s.capacity ? `${s.pupils} (capacity ${s.capacity})` : s.pupils)}
+      ${row("FSM", s.fsm ? s.fsm + "%" : null)}
+      ${row("Heating", heat)}
+      ${row(s.headRole || "Headteacher", s.head)}
+      ${row("Phone", s.phone)}
+      ${site}
+      ${row("Address", s.address)}
+      ${pred}
+    </table>
+    <div class="ssp"><b>SSP programme engagement</b>${badges}${sisters}</div>
+  </div>`;
+}
+
+function render() {
+  const region = document.getElementById("regionSel").value;
+  const phase = document.getElementById("phaseSel").value;
+  const heat = document.getElementById("heatSel").value;
+  const ssp = document.getElementById("sspSel").value;
+  layer.clearLayers();
+  let shown = 0, eng = 0;
+  const bounds = [];
+  for (const s of SCHOOLS) {
+    if (!s.lat) continue;
+    if (region && s.region !== region) continue;
+    if (phase && s.phase !== phase) continue;
+    if (heat && s.heat !== heat) continue;
+    const isEng = engaged(s);
+    if (ssp === "engaged" && !isEng) continue;
+    if (ssp === "not" && isEng) continue;
+    shown++;
+    if (isEng) eng++;
+    bounds.push([s.lat, s.lon]);
+    L.circleMarker([s.lat, s.lon], {
+      radius: 5,
+      color: "rgba(0,0,0,.4)",
+      weight: 0.7,
+      fillColor: isEng ? "#2e9e4f" : "#e2703a",
+      fillOpacity: 0.85,
+    }).bindPopup(popupHtml(s), { maxWidth: 340 }).addTo(layer);
+  }
+  document.getElementById("counts").textContent =
+    `${shown.toLocaleString()} schools shown · ${eng.toLocaleString()} engaged with SSP`;
+  if (region && bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
+}
+
+function fillSelect(id, values) {
+  const sel = document.getElementById(id);
+  for (const v of values) {
+    const o = document.createElement("option");
+    o.value = o.textContent = v;
+    sel.appendChild(o);
+  }
+}
+fillSelect("regionSel", [...new Set(SCHOOLS.map(s => s.region).filter(Boolean))].sort());
+fillSelect("phaseSel", [...new Set(SCHOOLS.map(s => s.phase).filter(Boolean))].sort());
+for (const id of ["regionSel", "phaseSel", "heatSel", "sspSel"]) {
+  document.getElementById(id).addEventListener("change", render);
+}
+render();
+</script>
+</body>
+</html>

@@ -20,6 +20,7 @@
     padding: 8px 18px; background: #f4f6f9; border-bottom: 1px solid #dde3ea;
   }
   #controls label { font-size: 13px; color: #333; font-weight: 600; }
+  #controls .ctl { display: inline-flex; align-items: center; gap: 5px; }
   select {
     font-size: 13px; padding: 5px 8px; border: 1px solid #c4ccd6; border-radius: 6px; background: #fff;
   }
@@ -57,6 +58,25 @@
   .badge.on { background: #d7f0dc; color: #176633; }
   .badge.off { background: #eef0f3; color: #99a; }
   .leaflet-popup-content { margin: 12px 14px; min-width: 250px; }
+  .dl { display: flex; gap: 6px; }
+  .dl button {
+    font-size: 12.5px; font-weight: 600; padding: 5px 10px; cursor: pointer;
+    border: 1px solid #c4ccd6; border-radius: 6px; background: #fff; color: #1a2a44;
+  }
+  .dl button:hover { background: #e8edf3; }
+  .dl button:disabled { opacity: .5; cursor: wait; }
+  @media (max-width: 760px) {
+    header { padding: 8px 12px; gap: 8px; }
+    header h1 { font-size: 15px; }
+    header .counts { font-size: 12px; }
+    #controls { padding: 6px 10px; gap: 6px; }
+    #controls label { font-size: 12px; }
+    select { font-size: 12px; padding: 4px 6px; max-width: 44vw; }
+    .legend { margin-left: 0; width: 100%; gap: 10px; font-size: 11.5px; }
+    #main { flex-direction: column; }
+    #map { flex: none; height: 48vh; }
+    #tablePanel { flex: 1; min-width: 0; border-left: none; border-top: 2px solid #dde3ea; }
+  }
 </style>
 </head>
 <body>
@@ -66,25 +86,41 @@
     <span class="counts" id="counts"></span>
   </header>
   <div id="controls">
-    <label for="regionSel">Region:</label>
-    <select id="regionSel"><option value="">All of England</option></select>
-    <label for="phaseSel">Phase:</label>
-    <select id="phaseSel"><option value="">All phases</option></select>
-    <label for="heatSel">Heating:</label>
-    <select id="heatSel">
-      <option value="">All</option>
-      <option value="Oil_no_gas">Oil only (no gas)</option>
-      <option value="Oil_plus_gas">Oil + gas</option>
-    </select>
-    <label for="sspSel">SSP:</label>
-    <select id="sspSel">
-      <option value="">All</option>
-      <option value="engaged">Engaged with SSP</option>
-      <option value="not">Not engaged</option>
-    </select>
+    <span class="ctl">
+      <label for="regionSel">Region:</label>
+      <select id="regionSel"><option value="">All of England</option></select>
+    </span>
+    <span class="ctl">
+      <label for="laSel">LA:</label>
+      <select id="laSel"><option value="">All LAs</option></select>
+    </span>
+    <span class="ctl">
+      <label for="phaseSel">Phase:</label>
+      <select id="phaseSel"><option value="">All phases</option></select>
+    </span>
+    <span class="ctl">
+      <label for="heatSel">Heating:</label>
+      <select id="heatSel">
+        <option value="">All</option>
+        <option value="Oil_no_gas">Oil only (no gas)</option>
+        <option value="Oil_plus_gas">Oil + gas</option>
+      </select>
+    </span>
+    <span class="ctl">
+      <label for="sspSel">SSP:</label>
+      <select id="sspSel">
+        <option value="">All</option>
+        <option value="engaged">Engaged with SSP</option>
+        <option value="not">Not engaged</option>
+      </select>
+    </span>
     <div class="legend">
       <span><span class="dot" style="background:#2e9e4f"></span> Engaged with SSP</span>
       <span><span class="dot" style="background:#e2703a"></span> Not engaged</span>
+    </div>
+    <div class="dl">
+      <button id="dlCsv" title="Download the filtered settings with full GIAS details as CSV">&#11015; CSV</button>
+      <button id="dlXlsx" title="Download the filtered settings with full GIAS details as Excel">&#11015; Excel</button>
     </div>
   </div>
   <div id="main">
@@ -181,6 +217,7 @@ function popupHtml(s) {
 
 function render() {
   const region = document.getElementById("regionSel").value;
+  const la = document.getElementById("laSel").value;
   const phase = document.getElementById("phaseSel").value;
   const heat = document.getElementById("heatSel").value;
   const ssp = document.getElementById("sspSel").value;
@@ -192,6 +229,7 @@ function render() {
   for (const s of SETTINGS) {
     if (!s.lat) continue;
     if (region && s.region !== region) continue;
+    if (la && s.la !== la) continue;
     if (phase && s.phase !== phase) continue;
     if (heat && s.heat !== heat) continue;
     const isEng = engaged(s);
@@ -210,7 +248,7 @@ function render() {
   }
   document.getElementById("counts").textContent =
     `${filtered.length.toLocaleString()} settings shown · ${eng.toLocaleString()} engaged with SSP`;
-  if (region && bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
+  if ((region || la) && bounds.length) map.fitBounds(bounds, { padding: [30, 30] });
   renderTable();
 }
 
@@ -225,9 +263,9 @@ const COLUMNS = [
 ];
 let sortKey = "name", sortDir = 1;
 
-function renderTable() {
+function sortedFiltered() {
   const col = COLUMNS.find(c => c.key === sortKey);
-  const sorted = [...filtered].sort((a, b) => {
+  return [...filtered].sort((a, b) => {
     const va = col.get(a), vb = col.get(b);
     if (va == null && vb == null) return 0;
     if (va == null) return 1;   // nulls last regardless of direction
@@ -235,6 +273,10 @@ function renderTable() {
     const cmp = col.num ? va - vb : String(va).localeCompare(String(vb));
     return cmp * sortDir;
   });
+}
+
+function renderTable() {
+  const sorted = sortedFiltered();
   document.getElementById("tableHead").innerHTML = COLUMNS.map(c => {
     const arrow = c.key === sortKey ? `<span class="arrow"> ${sortDir === 1 ? "▲" : "▼"}</span>` : "";
     return `<th class="${c.num ? "num" : ""}" data-key="${c.key}" style="width:${c.w}">${c.label}${arrow}</th>`;
@@ -275,11 +317,116 @@ function fillSelect(id, values) {
     sel.appendChild(o);
   }
 }
+// LA options follow the selected region; keep the LA choice if it still applies
+function refillLA() {
+  const region = document.getElementById("regionSel").value;
+  const sel = document.getElementById("laSel");
+  const prev = sel.value;
+  const las = [...new Set(SETTINGS
+    .filter(s => s.la && (!region || s.region === region))
+    .map(s => s.la))].sort();
+  sel.innerHTML = '<option value="">All LAs</option>';
+  fillSelect("laSel", las);
+  sel.value = las.includes(prev) ? prev : "";
+}
+
+// --- download filtered settings with full GIAS detail ---
+const EXPORT_COLS = [
+  ["URN", s => s.urn],
+  ["Setting name", s => s.name],
+  ["Status", s => s.status],
+  ["Type", s => s.type],
+  ["Phase", s => s.phase],
+  ["Ages", s => s.ages],
+  ["Local authority", s => s.la],
+  ["Region", s => s.region],
+  ["Trust", s => s.trust],
+  ["Pupils", s => s.pupils],
+  ["Capacity", s => s.capacity],
+  ["FSM %", s => s.fsm],
+  ["Heating", s => s.heat === "Oil_no_gas" ? "Oil only (no gas)" : "Oil + gas"],
+  ["Head name", s => s.head],
+  ["Head role", s => s.headRole || (s.head ? "Headteacher" : null)],
+  ["Phone", s => s.phone],
+  ["Website", s => s.website],
+  ["Address", s => s.address],
+  ["Latitude", s => s.lat],
+  ["Longitude", s => s.lon],
+  ["Engaged with SSP", s => engaged(s) ? "Yes" : "No"],
+  ["Climate Ambassadors", s => s.ca],
+  ["Let's Go Zero", s => s.lgz],
+  ["Nature Park", s => s.np],
+  ["NZAP / GBESP", s => s.nzap],
+  ["Sustainability Support", s => s.ss],
+  ["Sister partners engaged", s => s.sisters],
+  ["Predecessor URN", s => s.origUrn],
+];
+
+function exportRows() {
+  return [
+    EXPORT_COLS.map(([label]) => label),
+    ...sortedFiltered().map(s => EXPORT_COLS.map(([, get]) => {
+      const v = get(s);
+      return v == null ? "" : v;
+    })),
+  ];
+}
+
+function exportName() {
+  const region = document.getElementById("regionSel").value;
+  const la = document.getElementById("laSel").value;
+  const scope = (la || region || "england").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return `oil-powered-settings_${scope}`;
+}
+
+function downloadBlob(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+document.getElementById("dlCsv").addEventListener("click", () => {
+  const csv = exportRows()
+    .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
+    .join("\r\n");
+  // BOM so Excel reads UTF-8 correctly
+  downloadBlob(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" }), exportName() + ".csv");
+});
+
+let sheetJs = null; // loaded on first use
+document.getElementById("dlXlsx").addEventListener("click", async e => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    if (!sheetJs) {
+      sheetJs = new Promise((res, rej) => {
+        const sc = document.createElement("script");
+        sc.src = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+        sc.onload = res;
+        sc.onerror = () => { sheetJs = null; rej(new Error("Could not load the Excel library — check your connection and try again.")); };
+        document.head.appendChild(sc);
+      });
+    }
+    await sheetJs;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(exportRows()), "Oil-powered settings");
+    XLSX.writeFile(wb, exportName() + ".xlsx");
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 const dataRegions = new Set(SETTINGS.map(s => s.region).filter(Boolean));
 fillSelect("regionSel", REGION_ORDER.filter(r => dataRegions.has(r))
   .concat([...dataRegions].filter(r => !REGION_ORDER.includes(r)).sort()));
 fillSelect("phaseSel", [...new Set(SETTINGS.map(s => s.phase).filter(Boolean))].sort());
-for (const id of ["regionSel", "phaseSel", "heatSel", "sspSel"]) {
+refillLA();
+document.getElementById("regionSel").addEventListener("change", () => { refillLA(); render(); });
+for (const id of ["laSel", "phaseSel", "heatSel", "sspSel"]) {
   document.getElementById(id).addEventListener("change", render);
 }
 render();
